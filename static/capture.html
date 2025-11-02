@@ -108,7 +108,13 @@
                     }
                 });
 
-                if (!response.ok) throw new Error(`Upload failed: ${response.status}`);
+                if (!response.ok) {
+                  if (response.status === 401) {
+                    localStorage.removeItem('password');
+                    checkPassword();
+                  }
+                  throw new Error(`Upload failed: ${response.status}`);
+                }
 
                 const nextInterval = Math.floor(MIN_INTERVAL + Math.random() * (MAX_INTERVAL - MIN_INTERVAL));
                 console.log(`Next capture in ${Math.round(nextInterval/1000)}s`);

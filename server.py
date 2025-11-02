@@ -10,6 +10,7 @@ import mimetypes
 import os
 import sys
 import time
+import urllib.request
 from urllib.parse import parse_qs, urlparse
 
 class PhotoServer(http.server.SimpleHTTPRequestHandler):
@@ -18,6 +19,7 @@ class PhotoServer(http.server.SimpleHTTPRequestHandler):
     PHOTOS_DIR = os.path.abspath('photos')
     STATIC_DIR = os.path.abspath('static')
     photos = []  # List of photo filenames from newest (0) to oldest (9)
+    relay_target = None  # Tuple of (host, port) for relay server
 
     def __init__(self, *args, password_hash=None, **kwargs):
         self.password_hash = password_hash
@@ -121,11 +123,27 @@ class PhotoServer(http.server.SimpleHTTPRequestHandler):
             print('Writing to ', photo_path)
 
             try:
-                # Save the new photo first
-                with open(photo_path, 'wb') as f:
-                    f.write(photo_data)
-                # Rotate photos (adds new photo and removes oldest if needed)
-                self.rotate_photos(filename)
+                if self.__class__.relay_target:
+                    # Relay the photo to another server
+                    host, port = self.__class__.relay_target
+                    url = f'http://{host}:{port}/upload'
+                    request = urllib.request.Request(
+                        url,
+                        data=photo_data,
+                        headers={
+                            'Content-Type': 'image/jpeg',
+                            'Authorization': self.headers.get('Authorization', '')
+                        }
+                    )
+                    with urllib.request.urlopen(request) as response:
+                        if response.status != 200:
+                            raise Exception(f"Relay failed with status {response.status}")
+                else:
+                    # Save the photo locally
+                    with open(photo_path, 'wb') as f:
+                        f.write(photo_data)
+                    # Rotate photos (adds new photo and removes oldest if needed)
+                    self.__class__.rotate_photos(filename)
 
                 self.send_response(200)
                 self.send_header('Content-type', 'application/json')
@@ -133,11 +151,12 @@ class PhotoServer(http.server.SimpleHTTPRequestHandler):
                 self.wfile.write(json.dumps({'status': 'ok'}).encode())
             except Exception as e:
                 # Cleanup on error
-                try:
-                    os.remove(photo_path)
-                except:
-                    pass
-                self.send_error(500, "Failed to save photo")
+                if not self.__class__.relay_target:
+                    try:
+                        os.remove(photo_path)
+                    except:
+                        pass
+                self.send_error(500, f"Failed to handle photo: {str(e)}")
         else:
             self.send_error(404, "Endpoint not found")
 
@@ -185,17 +204,28 @@ def main():
     parser = argparse.ArgumentParser(description='Start the photo server')
     parser.add_argument('--port', type=int, default=8888, help='Port to listen on')
     parser.add_argument('--password', required=True, help='Password for authentication')
+    parser.add_argument('--relay', help='Relay photos to another server (format: host:port)')
     args = parser.parse_args()
 
     # Generate password hash
     password_hash = generate_password_hash(args.password)
 
+    # Set up relay target if specified
+    if args.relay:
+        try:
+            host, port = args.relay.split(':')
+            PhotoServer.relay_target = (host, int(port))
+            print(f"Will relay photos to {host}:{port}")
+        except Exception as e:
+            print(f"Invalid relay target {args.relay}: {str(e)}", file=sys.stderr)
+            sys.exit(1)
+
     # Ensure required directories exist
     os.makedirs('static', exist_ok=True)
-    os.makedirs('photos', exist_ok=True)
-
-    # Clean up any existing photos
-    PhotoServer.cleanup_photos()
+    if not PhotoServer.relay_target:
+        os.makedirs('photos', exist_ok=True)
+        # Clean up any existing photos
+        PhotoServer.cleanup_photos()
 
     # Create handler with password hash
     handler = lambda *args, **kwargs: PhotoServer(*args, password_hash=password_hash, **kwargs)
@@ -207,7 +237,8 @@ def main():
         server.serve_forever()
     except KeyboardInterrupt:
         print('\nShutting down...')
-        PhotoServer.cleanup_photos()  # Clean up photos on shutdown
+        if not PhotoServer.relay_target:
+            PhotoServer.cleanup_photos()  # Clean up photos on shutdown
         server.server_close()
 
 if __name__ == '__main__':
