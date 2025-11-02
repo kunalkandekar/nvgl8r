@@ -25,13 +25,16 @@ Nvgl8r is a web-based surveillance application that:
 - Handles both static file serving and photo uploads
 - Uses built-in Python libraries for HTTP handling
 - Serves static HTML/JS files from filesystem
-- Manages photo storage with 10-photo limit
+- Manages photo storage with 10-photo limit (1.jpg through 10.jpg)
+- Tracks most recent photo number in memory
+- Simple /latest-photo-number endpoint for client sync
 - Accepts auth credentials via command line args
 - Implements basic auth with salted password hashing
 
 ### 3. Photo Monitor Frontend
 - Horizontally scrollable display of last 5 photos
-- Uses Fetch API for photo retrieval
+- Fetches latest photo number from server
+- Retrieves photos N through N-4 in sequence
 - Real-time photo updates
 - Touch-friendly swipe navigation
 
@@ -39,8 +42,14 @@ Nvgl8r is a web-based surveillance application that:
 
 ### Authentication
 - Auth is implemented at server level using basic auth
-- Credentials are hardcoded in server script
+- Credentials provided via command line args
 - All endpoints (web pages and API) require authentication
+- Important security considerations:
+  - Never serve files outside designated static/photos directories
+  - Validate file paths to prevent directory traversal
+  - Only serve allowed file extensions (.html, .js, .jpg)
+  - Set appropriate Content-Type headers
+  - Don't expose Python error messages to clients
 
 ### Photo Management
 - Server maintains max 10 photos on filesystem
@@ -84,6 +93,8 @@ Nvgl8r is a web-based surveillance application that:
   - http.server for web serving
   - base64 for auth encoding
   - io for image handling
+  - os.path for safe path resolution
+  - mimetypes for content type detection
 - Memory-only state management
   - Photo recency tracking in memory
   - Current auth tokens/sessions

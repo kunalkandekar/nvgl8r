@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Nvgl8r Monitor</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="icon" href="data:;base64,iVBORw0KGgo=">
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: #000;
+            color: #fff;
+            font-family: sans-serif;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        #photo-container {
+            flex: 1;
+            overflow-x: auto;
+            overflow-y: hidden;
+            white-space: nowrap;
+            -webkit-overflow-scrolling: touch; /* Smooth scrolling on iOS */
+            scrollbar-width: none; /* Hide scrollbar Firefox */
+            background: #000;
+            padding: 10px;
+            display: flex;
+            align-items: center;
+        }
+
+        #photo-container::-webkit-scrollbar {
+            display: none; /* Hide scrollbar Chrome/Safari */
+        }
+
+        .photo {
+            height: calc(100vh - 60px); /* Full height minus padding and status bar */
+            width: 90vw; /* Use most of the viewport width */
+            flex: 0 0 auto;
+            margin-right: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .photo:last-child {
+            margin-right: 0;
+        }
+
+        .photo img {
+            max-height: 100%;
+            max-width: 100%;
+            width: auto;
+            height: auto;
+            object-fit: contain;
+        }
+
+        #status {
+            padding: 10px;
+            text-align: center;
+            font-size: 14px;
+            background: #111;
+        }
+
+        .error {
+            color: #ff4444;
+        }
+    </style>
+</head>
+<body>
+    <div id="photo-container"></div>
+    <div id="status">Loading...</div>
+
+    <script>
+        // Configuration
+        const REFRESH_INTERVAL = 10000; // 10 seconds
+        const MAX_PHOTOS = 5;
+
+        // Elements
+        const container = document.getElementById('photo-container');
+        const status = document.getElementById('status');
+
+        // Load photos
+        async function loadPhotos() {
+            console.log('loading photos');
+            try {
+                // Request photos 0 through 4
+                const photos = [];
+                for (let i = 0; i < MAX_PHOTOS; i++) {
+                    photos.push(`/photos/${i}.jpg`);
+                }
+
+                // Update photos
+                updatePhotoDisplay(photos);
+                status.textContent = 'Updated: ' + new Date().toLocaleTimeString();
+                status.classList.remove('error');
+            } catch (err) {
+                status.textContent = `Error: ${err.message}`;
+                status.classList.add('error');
+            }
+        }
+
+        // Update photo display
+        function updatePhotoDisplay(photos) {
+            // Clear existing photos
+            container.innerHTML = '';
+
+            // Create photo elements
+            photos.forEach(photo => {
+                const div = document.createElement('div');
+                div.className = 'photo';
+
+                const img = document.createElement('img');
+                img.src = photo + '?t=' + Date.now(); // Cache busting
+                img.alt = 'Photo';
+                img.onerror = () => div.style.display = 'none';
+                img.onload = () => div.style.display = 'block';
+
+                div.appendChild(img);
+                container.appendChild(div);
+            });
+        }
+
+        // Handle password
+        function checkPassword() {
+            let password = localStorage.getItem('password');
+            if (!password) {
+                password = prompt('Enter password:');
+                if (password) {
+                    localStorage.setItem('password', password);
+                } else {
+                    status.textContent = 'Password required';
+                    status.classList.add('error');
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        // Add auth headers to all fetch requests
+        const originalFetch = window.fetch;
+        window.fetch = function() {
+            const args = Array.from(arguments);
+            if (args[1] === undefined) args[1] = {};
+            if (args[1].headers === undefined) args[1].headers = {};
+            args[1].headers['Authorization'] = 'Basic ' + btoa(':' + localStorage.getItem('password'));
+            return originalFetch.apply(window, args);
+        };
+
+        // Start everything
+        if (checkPassword()) {
+            // Initial load
+            loadPhotos();
+
+            // Refresh periodically
+            setInterval(loadPhotos, REFRESH_INTERVAL);
+        }
+    </script>
+</body>
+</html>
