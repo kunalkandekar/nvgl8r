@@ -7,7 +7,7 @@ See the copilot-instructions for design and implementation details.
 
 THIS IS HORRIBLY INSECURE DO NOT USE OUTSIDE OF A TRUSTED ENVIRONMENT
 
-Note: This is insecure by design to overindex on simplicity, not due to any shortcoming of the AI (or, as the AI helpfully autocomplete suggested, "not because I'm lazy.")
+Note: This is insecure by design to overindex on simplicity, not due to any shortcoming of the AI (or, as the AI autocomplete helpfully suggested, "not because I'm lazy.")
 
 # Instructions
 1. Clone this repository
