@@ -4,116 +4,95 @@ This document provides essential context for AI coding agents working with the N
 
 ## Project Overview
 
-Nvgl8r is a web-based surveillance application that:
-- Captures photos from a webcam at random intervals (1-5 minutes)
-- Uploads photos to a zero-dependency Python server
-- Provides a mobile-friendly monitoring interface to view recent photos
-- Designed for simplicity and minimal resource usage
+Nvgl8r is a small web-based webcam capture and monitoring application. It supports two primary modes:
+- Server-backed mode: capture pages upload photos to a simple Python server which stores a small rolling set of images.
+- P2P mode: capture pages send encrypted images directly to connected monitor pages using WebRTC (no server-side storage).
+
+This file describes both the original server-based architecture and the newer P2P additions so agents understand how to modify or extend either mode.
 
 ## Architecture Components
 
-### 1. Photo Capture Frontend
+### 1. Photo Capture Frontend (server-backed, deprecated)
 - Single page web app using vanilla JavaScript
 - Uses `getUserMedia` API for webcam access
 - Implements canvas-based image capture (640x480 recommended for mobile compatibility)
 - AJAX-based image upload to server
-- Random interval timing between 1-5 minutes
+- Random interval timing (historically 1-5 minutes; server-backed still supported)
 - Wake lock API to prevent device sleep
 - Mobile-first responsive design
 
+### 1b. Photo Capture Frontend (P2P)
+- Optional serverless capture mode: the capture page can advertise a Room and send encrypted images directly to monitor peers via WebRTC.
+- Requires a local `p2pcf.js` helper (not bundled) that handles signalling/peer discovery. Place `p2pcf.js` into the `static/` folder so pages can load it as `/p2pcf.js`.
+- Uses `static/p2p-crypto.js` to derive a symmetric AES-GCM key from a user-provided PIN and the Room name (PBKDF2 with SHA-256) and to encrypt image bytes client-side.
+- Capture frequency in the P2P flow is 30–60 seconds by default (configurable in `capture.html`). Images are 640x480 JPEGs at reduced quality to keep payloads small.
+
 ### 2. Python Server
-- Handles both static file serving and photo uploads
+- Handles both static file serving and photo uploads (server-backed mode)
 - Uses built-in Python libraries for HTTP handling
 - Serves static HTML/JS files from filesystem
-- Manages photo storage with 10-photo limit (1.jpg through 10.jpg)
+- Manages photo storage with a configurable rolling size
 - Tracks most recent photo number in memory
-- Simple /latest-photo-number endpoint for client sync
-- Accepts auth credentials via command line args
-- Implements basic auth with salted password hashing
+- Simple endpoints for upload and static content
 
-### 3. Photo Monitor Frontend
+### 2b. P2P Signal/Relay (p2pcf)
+- For P2P mode, `p2pcf.js` is responsible for signalling and peer discovery (the project does not bundle a signalling server).
+- Ensure the `p2pcf.js` you provide supports STUN/TURN configuration if peers must traverse NATs.
+
+### 3. Photo Monitor Frontend (server-backed)
 - Horizontally scrollable display of last 5 photos
-- Fetches latest photo number from server
-- Retrieves photos N through N-4 in sequence
-- Real-time photo updates
-- Touch-friendly swipe navigation
+- Fetches latest photo number from server and loads N..N-4
+- Real-time updates via periodic polling
+
+### 3b. Photo Monitor Frontend (P2P)
+- Joins a Room and connects to a capture peer via `p2pcf.js`.
+- Derives the AES-GCM key using the user-supplied PIN + Room (same derivation as capture page) using `p2p-crypto.js`.
+- Receives encrypted image messages via WebRTC DataChannel, decrypts them, and displays them in the horizontal scroller UI.
+- If decryption fails, the monitor should surface an explanatory error (likely due to wrong PIN or mismatched Room).
 
 ## Development Workflows
 
-### Authentication
-- Auth is implemented at server level using basic auth
-- Credentials provided via command line args
-- All endpoints (web pages and API) require authentication
-- Important security considerations:
-  - Never serve files outside designated static/photos directories
-  - Validate file paths to prevent directory traversal
-  - Only serve allowed file extensions (.html, .js, .jpg)
-  - Set appropriate Content-Type headers
-  - Don't expose Python error messages to clients
+### Authentication (server-backed)
+- Auth for server-backed mode is implemented at server level using Basic Auth with a salted password hash.
 
 ### Photo Management
-- Server maintains max 10 photos on filesystem
-- Simple numbered naming (photo1.jpg through photo10.jpg)
-- Photo recency tracking in server memory
-- Oldest photos overwritten based on memory state
-- Last 5 photos served to monitor page
+- Server-backed: server maintains a rolling set of photos with simple numbered filenames and overwrites the oldest entries.
+- P2P: no server storage. Images are held in memory by clients and displayed on monitors as they arrive.
 
 ## Cross-Component Communication
 
 ### Frontend → Server
 - Photo upload: AJAX POST with image data
 - Photo retrieval: Fetch API GET requests
-- All requests must include basic auth headers
 
-### Data Flow
-1. Webcam capture → Canvas conversion
-2. Canvas data → AJAX upload
-3. Server storage → File system
-4. File system → Monitor page display
+### Frontend → Peer (P2P)
+- Capture → Monitor: Encrypted binary image payloads are sent over an ordered reliable WebRTC DataChannel.
+- Message format (simple): send a small JSON header as a text message describing the image (type:'img', id, iv, mime, size), followed by the ciphertext as a binary message. The header contains the base64-encoded IV required for AES-GCM decryption.
 
 ## Project Conventions
 
 ### Security
-- All endpoints require authentication
-- Password stored as salted hash in server code
-- Basic auth headers required for all requests
-- Alternative simple security options:
-  - Time-based tokens (server memory only)
-  - IP-based allowlisting for trusted networks
-  - Shared secret in URL path (for simpler clients)
+- Server-backed mode: all requests are authenticated with Basic Auth. Sensitive server endpoints should be protected and validated.
+- P2P mode: encryption depends entirely on the user-supplied PIN; choose long PINs for better security. AES-GCM-256 is used for image encryption.
 
 ### Frontend Design
 - Vanilla JavaScript, no frameworks
-- Native browser APIs (getUserMedia, canvas, fetch)
+- Native browser APIs (getUserMedia, canvas, fetch, Web Crypto)
 - Mobile-first responsive design
-- Simple horizontal scroll for photo viewing
 
 ### Implementation Notes
-- Server uses only Python standard library
-  - http.server for web serving
-  - base64 for auth encoding
-  - io for image handling
-  - os.path for safe path resolution
-  - mimetypes for content type detection
-- Memory-only state management
-  - Photo recency tracking in memory
-  - Current auth tokens/sessions
-  - No database needed
-- Project structure
-  - Static HTML/JS in separate files
-  - Python server script
-  - Command-line configuration
-- Basic mobile optimizations
-  - Compressed JPEG format
-  - Client-side image resizing
+- Server uses only Python standard library (http.server, base64, os.path, mimetypes, etc.)
+- `p2p-crypto.js` implements PBKDF2 (HMAC-SHA256) key derivation and AES-GCM encrypt/decrypt helpers for use by capture and monitor pages.
+- Keep JPEG dimensions and quality tuned to keep DataChannel payloads small; implement chunking/reassembly only if necessary.
 
 ### File Organization
 - `static/`
-  - `capture.html` - Photo capture page
-  - `monitor.html` - Photo viewing page
-  - `common.js` - Shared JavaScript utilities
-- `photos/` - Photo storage directory
+  - `capture.html` - Photo capture page (supports server-backed and P2P host mode)
+  - `monitor.html` - Photo viewing page (supports server-backed and P2P client mode)
+  - `p2p-crypto.js` - Web Crypto helpers (PBKDF2 + AES-GCM wrappers)
+  - `p2pcf.js` - (not bundled) local P2P signalling/connection helper — place in `static/`
+- `photos/` - Photo storage directory (server-backed)
 - `server.py` - Python server script
   - Accepts password hash via command line
   - Loads static files from filesystem
-  - Maintains photo recency in memory
+  - Maintains photo recency in memory (server-backed mode)

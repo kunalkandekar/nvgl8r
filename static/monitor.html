@@ -70,93 +70,105 @@
 <body>
     <h1>Brat Cam</h1>
     <b>Are your brats studying??</b>
+    <div id="controls" style="padding:10px;">
+        <label>Room: <input id="room" type="text" placeholder="room name"></label>
+        <label>PIN: <input id="pin" type="text" placeholder="alphanumeric PIN"></label>
+        <button id="connectBtn">Connect</button>
+        <span id="status">Idle</span>
+    </div>
+
     <div id="photo-container"></div>
-    <div id="status">Loading...</div>
 
-    <script>
-        // Configuration
-        const REFRESH_INTERVAL = 10000; // 10 seconds
-        const MAX_PHOTOS = 5;
-
+    <!-- p2pcf and crypto helper -->
+    <script src="p2p-crypto.js"></script>
+    <script type="module">
+        // Source and license for this here: https://github.com/gfodor/p2pcf
+        import P2PCF from './p2pcf.js';
         // Elements
         const container = document.getElementById('photo-container');
-        const status = document.getElementById('status');
+        const statusSpan = document.getElementById('status');
+        const connectBtn = document.getElementById('connectBtn');
+        const roomInput = document.getElementById('room');
+        const pinInput = document.getElementById('pin');
 
-        // Load photos
-        async function loadPhotos() {
-            console.log('loading photos');
+        // P2P state
+        let session = null;
+        let derivedKey = null;
+        const pending = {}; // meta by id
+        const MAX_DISPLAY = 5;
+
+        function joinRoomAndRegister(room) {
             try {
-                // Request photos 0 through 4
-                const photos = [];
-                for (let i = 0; i < MAX_PHOTOS; i++) {
-                    photos.push(`/photos/${i}.jpg`);
-                }
+                const uid = 'client-' + Math.floor(Math.random() * 100000);
+                const p2 = new P2PCF(uid, room);
 
-                // Update photos
-                updatePhotoDisplay(photos);
-                status.textContent = 'Updated: ' + new Date().toLocaleTimeString();
-                status.classList.remove('error');
-            } catch (err) {
-                status.textContent = `Error: ${err.message}`;
-                status.classList.add('error');
+                p2.on('peerconnect', peer => {
+                    statusSpan.textContent = 'Connected to host: ' + (peer.id ? peer.id.substring(0,5) : '');
+                });
+
+                p2.on('peerclose', peer => {
+                    statusSpan.textContent = 'Peer disconnected';
+                });
+
+                p2.on('msg', async (peer, bytes) => {
+                    try {
+                        const msg = new TextDecoder('utf-8').decode(bytes);
+                        console.log(`Received data of length, ${bytes.byteLength} bytes / ${msg.length} chars`);
+                        const { id, type, mime, size, iv, data } = JSON.parse(msg);
+                        try {
+                            const buf = P2PCrypto.base64ToArrayBuffer(data);
+                            const plain = await P2PCrypto.decryptBuffer(iv, buf, derivedKey);
+                            const blob = new Blob([plain], { type: mime || 'image/jpeg' });
+                            displayImageBlob(blob);
+                        } catch (e) {
+                            console.error('Decrypt failed', e);
+                            statusSpan.textContent = 'Decrypt error — wrong PIN?';
+                        }
+                    } catch (e) {
+                        console.error('msg handler error', e);
+                        console.log('Bytes:', bytes)
+                        console.log('Msg:', msg)
+                    }
+                });
+
+                p2.start();
+                return p2;
+            } catch (e) {
+                console.error('Failed to join room', e);
+                statusSpan.textContent = 'Failed to join room: ' + e.message;
+                return null;
             }
         }
 
-        // Update photo display
-        function updatePhotoDisplay(photos) {
-            // Clear existing photos
-            container.innerHTML = '';
+        function displayImageBlob(blob) {
+            const url = URL.createObjectURL(blob);
+            const div = document.createElement('div');
+            div.className = 'photo';
+            const img = document.createElement('img');
+            img.src = url;
+            img.onload = () => { URL.revokeObjectURL(url); };
+            div.appendChild(img);
+            container.insertBefore(div, container.firstChild);
 
-            // Create photo elements
-            photos.forEach(photo => {
-                const div = document.createElement('div');
-                div.className = 'photo';
-
-                const img = document.createElement('img');
-                img.src = photo + '?t=' + Date.now(); // Cache busting
-                img.alt = 'Photo';
-                img.onerror = () => div.style.display = 'none';
-                img.onload = () => div.style.display = 'block';
-
-                div.appendChild(img);
-                container.appendChild(div);
-            });
+            // Keep only last MAX_DISPLAY
+            while (container.children.length > MAX_DISPLAY) container.removeChild(container.lastChild);
+            statusSpan.textContent = 'Updated: ' + new Date().toLocaleTimeString();
         }
 
-        // Handle password
-        function checkPassword() {
-            let password = localStorage.getItem('password');
-            if (!password) {
-                password = prompt('Enter password:');
-                if (password) {
-                    localStorage.setItem('password', password);
-                } else {
-                    status.textContent = 'Password required';
-                    status.classList.add('error');
-                    return false;
-                }
-            }
-            return true;
-        }
+        connectBtn.addEventListener('click', async () => {
+            const room = String(roomInput.value || '').trim();
+            const pin = String(pinInput.value || '').trim();
+            if (!room) return alert('Enter room name');
+            if (!pin) return alert('Enter PIN');
 
-        // Add auth headers to all fetch requests
-        const originalFetch = window.fetch;
-        window.fetch = function() {
-            const args = Array.from(arguments);
-            if (args[1] === undefined) args[1] = {};
-            if (args[1].headers === undefined) args[1].headers = {};
-            args[1].headers['Authorization'] = 'Basic ' + btoa(':' + localStorage.getItem('password'));
-            return originalFetch.apply(window, args);
-        };
+            statusSpan.textContent = 'Deriving key...';
+            derivedKey = await P2PCrypto.deriveKeyFromPIN(pin, room);
 
-        // Start everything
-        if (checkPassword()) {
-            // Initial load
-            loadPhotos();
-
-            // Refresh periodically
-            setInterval(loadPhotos, REFRESH_INTERVAL);
-        }
+            statusSpan.textContent = 'Joining room...';
+            session = joinRoomAndRegister(room);
+            if (!session) return;
+            statusSpan.textContent = 'Waiting for images...';
+        });
     </script>
 </body>
 </html>
