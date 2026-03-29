@@ -39,7 +39,7 @@
 </head>
 <body>
     <div style="padding: 20px;">
-        <h1>BratCam</h1>
+        <a href="./index.html" style="text-decoration: none; color: inherit;"><h1>BratCam</h1></a>
         <b>Are your brats studying??</b>
     </div>
 
@@ -47,6 +47,10 @@
         <label>Room name: <input id="room" type="text" placeholder="enter room to advertise"></label>
         <label>PIN: <input id="pin" type="text" placeholder="alphanumeric PIN"></label>
         <button id="startBtn">Start Capture & Advertise</button>
+        <br/>
+        <br/>
+        <!-- iOS requires first wakelock to come from user action -->
+        <button id="wakeLockBtn">Toggle WakeLock!</button> &nbsp; &nbsp;<label id="wakeLockStatus">INACTIVE</label>
     </div>
 
     <video id="video" autoplay playsinline></video>
@@ -77,16 +81,52 @@
         canvas.height = CAPTURE_HEIGHT;
         const ctx = canvas.getContext('2d');
 
+        document.getElementById('wakeLockBtn').addEventListener('click', toggleWakeLock);
+
         // Keep screen awake
         let wakeLock = null;
+        async function toggleWakeLock() {
+            if (wakeLock !== null) {
+                releaseWakeLock();
+            } else {
+                await requestWakeLock();
+            }
+        }
+
         async function requestWakeLock() {
+            if (wakeLock) {
+                updateStatus('Wake lock already active');
+                return;
+            }
+            updateStatus('Requesting screen wake lock...');
             try {
                 if ('wakeLock' in navigator) {
                     wakeLock = await navigator.wakeLock.request('screen');
                     updateStatus('Screen wake lock active');
+                    document.getElementById('wakeLockStatus').innerText = 'ACTIVE'
+                } else {
+                    updateStatus('Wake lock not supported!!');
                 }
             } catch (err) {
-                updateStatus('Wake lock not supported');
+                updateStatus('Wake lock not supported: ' + err.message);
+            }
+        }
+
+        function releaseWakeLock() {
+            try {
+                if (wakeLock !== null) {
+                    updateStatus('Releasing screen wake lock...');
+                    wakeLock.release()
+                        .then(() => {
+                            wakeLock = null;
+                            updateStatus('Screen wake lock inactive');
+                            document.getElementById('wakeLockStatus').innerText = 'INACTIVE'
+                        });
+                } else {
+                    updateStatus('Wake lock already inactive');
+                }
+            } catch (err) {
+                updateStatus('Wake lock not supported: ' + err.message);
             }
         }
 
@@ -231,6 +271,7 @@
                     updateStatus('Failed to create P2P session');
                     return;
                 }
+                requestWakeLock();
 
                 // Start attempt to send images (will wait for peer if none connected)
                 captureAndSendLoop(p2pcf);
@@ -243,7 +284,11 @@
 
         // Keep wake lock on visibility
         document.addEventListener('visibilitychange', () => {
-            if (document.visibilityState === 'visible') requestWakeLock();
+            if (document.visibilityState === 'visible') {
+                requestWakeLock();
+            } else {
+                releaseWakeLock();
+            }
         });
     </script>
 </body>
