@@ -97,12 +97,22 @@
         const pending = {}; // meta by id
         const MAX_DISPLAY = 5;
 
+        // Restore cached inputs on page load
+        window.addEventListener('DOMContentLoaded', () => {
+            const cachedRoom = localStorage.getItem('nvgl8r_room');
+            const cachedPin = localStorage.getItem('nvgl8r_pin');
+            if (cachedRoom) roomInput.value = cachedRoom;
+            if (cachedPin) pinInput.value = cachedPin;
+        });
+
         function joinRoomAndRegister(room) {
             try {
                 const uid = 'client-' + Math.floor(Math.random() * 100000);
                 const p2 = new P2PCF(uid, room);
 
                 p2.on('peerconnect', peer => {
+                    localStorage.setItem('nvgl8r_room', roomInput.value);
+                    localStorage.setItem('nvgl8r_pin', pinInput.value);
                     statusSpan.textContent = 'Connected to host: ' + (peer.id ? peer.id.substring(0,5) : '');
                 });
 
@@ -135,6 +145,8 @@
                 return p2;
             } catch (e) {
                 console.error('Failed to join room', e);
+                localStorage.removeItem('nvgl8r_room');
+                localStorage.removeItem('nvgl8r_pin');
                 statusSpan.textContent = 'Failed to join room: ' + e.message;
                 return null;
             }
@@ -166,7 +178,6 @@
 
             statusSpan.textContent = 'Joining room...';
             session = joinRoomAndRegister(room);
-            if (!session) return;
             statusSpan.textContent = 'Waiting for images...';
         });
     </script>
