@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Nvgl8r / BratCam</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="icon" href="data:;base64,iVBORw0KGgo=">
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            font-family: sans-serif;
+            background: #000;
+            color: #fff;
+        }
+        .nav-link a {
+          font-size: 24px;
+          color: yellow;
+        }
+        #status {
+            margin-top: 20px;
+            font-size: 14px;
+            color: #aaa;
+        }
+        .error {
+            color: #ff4444;
+        }
+    </style>
+</head>
+<body>
+    <h1>BratCam</h1>
+    <b>Are your brats studying??</b>
+    <div>
+      <p>
+        Find any available device with a camera, point the camera and the brats, and start the Capture application.
+        Monitor on any convenient mobile device.
+      </p>
+    </div>
+    <div id="links" style="width:100%; display: flex; flex-direction: row; margin: 20px; justify-content: center; align-items: center; ">
+        <div class="nav-link" style="width:30%; margin: 20px; display: flex; justify-content: center; align-items: center; border: 2px solid white;">
+          <h2><a href="./capture.html">Capture</a></h2>
+        </div>
+        <div class="nav-link" style="width:30%; margin: 20px; display: flex; justify-content: center; align-items: center; border: 2px solid white;">
+          <h2><a href="./monitor.html">Monitor</a></h2>
+        </div>
+    </div>
+</body>
+</html>
